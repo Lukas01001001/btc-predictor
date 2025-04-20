@@ -145,5 +145,8 @@ plt.xticks(rotation=45)
 st.pyplot(fig)
 
 # Show raw data button
-if st.button("📄 Show raw data"):
-    st.dataframe(df.tail(10))
+if st.button("Show raw data"):
+    display_df = df.copy()
+    display_df["Data"] = display_df["Data"].astype(str)  # conversion for compatibility with pyarrow
+    st.dataframe(display_df.tail(10))
+
