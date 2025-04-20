@@ -17,7 +17,7 @@ FUTURE_DAYS = 5
 def load_data():
     df = pd.read_csv(DATA_CSV)
     df['Data'] = pd.to_datetime(df['Data'], errors='coerce')
-    df = df.dropna(subset=['Data'])  # usuwanie błędnych wierszy
+    df = df.dropna(subset=['Data'])
     return df
 
 def save_data(df):
@@ -47,9 +47,9 @@ def fetch_latest_data(last_date):
     else:
         st.warning(f"⚠️ Binance API error: {response.status_code}")
 
-    # Fallback: Try CoinGecko API
-    coingecko_url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1&interval=daily"
-    cg_response = requests.get(coingecko_url)
+    # Fallback: CoinGecko
+    cg_url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=1&interval=daily"
+    cg_response = requests.get(cg_url)
 
     if cg_response.status_code == 200:
         cg_data = cg_response.json()
@@ -90,47 +90,60 @@ model = load_model(MODEL_FILE)
 # Load data
 df = load_data()
 
-# Show data range
-st.caption(f"🗓️ Data range: {df['Data'].min().date()} → {df['Data'].max().date()} ({len(df)} days total)")
+# Show date range caption
+st.caption(f"🗓️ Data range: {df['Data'].min().date()} → {df['Data'].max().date()} ({len(df)} records)")
 
-# Check and update data
-last_date = df['Data'].max().date()
-new_rows = fetch_latest_data(last_date)
+# Force refresh button
+if st.button("🔄 Force data refresh"):
+    new_rows = fetch_latest_data(df['Data'].max().date())
+    if new_rows:
+        df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+        save_data(df)
+        st.success(f"✅ Forced update: {len(new_rows)} new day(s) added.")
+    else:
+        st.info("Data is already up to date.")
 
-if new_rows:
-    st.info(f"📅 Data updated with {len(new_rows)} new day(s).")
-    df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-    save_data(df)
+# Auto fetch on load
 else:
-    st.success("✅ Data is up to date.")
+    last_date = df['Data'].max().date()
+    new_rows = fetch_latest_data(last_date)
+    if new_rows:
+        df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+        save_data(df)
+        st.info(f"📅 Data updated with {len(new_rows)} new day(s).")
+    else:
+        st.success("✅ Data is up to date.")
 
-# Scale data
+# Scale and predict
 prices = df['Zamkniecie'].values.reshape(-1, 1)
 scaler = MinMaxScaler()
 scaler.fit(prices)
-
-# Predict
 predicted = predict_next_days(prices, model, scaler)
 
-# Display forecast
+# Forecast display
 st.subheader("🔮 Forecast for the next 5 days:")
 for i, val in enumerate(predicted.flatten(), 1):
     st.write(f"Day {i}: **${val:,.2f}**")
 
 # Chart
 st.subheader("📊 Chart")
-st.markdown("📡 *Latest price fetched from: Binance (fallback: CoinGecko)*")
+st.caption("📡 Data source: Binance API (fallback: CoinGecko API)")
 
 last_prices = prices[-30:].flatten()
 forecast_prices = predicted.flatten()
-combined = np.concatenate([last_prices, forecast_prices])
 x_labels = [f"-{29 - i}" for i in range(30)] + [f"+{i+1}" for i in range(FUTURE_DAYS)]
 
-fig, ax = plt.subplots()
-ax.plot(x_labels, combined, marker='o')
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(x_labels[:30], last_prices, color='skyblue', marker='o', label='Historical')
+ax.plot(x_labels[30:], forecast_prices, color='limegreen', marker='o', label='Forecast')
 ax.axvline(x=29.5, color='gray', linestyle='--')
 ax.set_title("BTC Price – Last 30 Days and 5-Day Forecast")
 ax.set_xlabel("Days")
 ax.set_ylabel("Price (USD)")
+ax.legend()
 plt.xticks(rotation=45)
 st.pyplot(fig)
+
+# Show raw data button
+if st.button("📄 Show raw data"):
+    st.dataframe(df.tail(10))
