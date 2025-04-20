@@ -16,7 +16,8 @@ FUTURE_DAYS = 5
 # === HELPER FUNCTIONS ===
 def load_data():
     df = pd.read_csv(DATA_CSV)
-    df['Data'] = pd.to_datetime(df['Data'])
+    df['Data'] = pd.to_datetime(df['Data'], errors='coerce')
+    df = df.dropna(subset=['Data'])  # usuwanie błędnych wierszy
     return df
 
 def save_data(df):
